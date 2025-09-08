@@ -1,0 +1,49 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alertmanager@streaming-platform.local'
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'web.hook'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+
+receivers:
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://alert-service:8001/webhook/alerts'
+        send_resolved: true
+
+  - name: 'critical-alerts'
+    webhook_configs:
+      - url: 'http://alert-service:8001/webhook/critical'
+        send_resolved: true
+    # Add email, Slack, or other notification methods here
+    # email_configs:
+    #   - to: 'admin@company.com'
+    #     subject: 'CRITICAL: {{ .GroupLabels.alertname }}'
+    #     body: |
+    #       {{ range .Alerts }}
+    #       Alert: {{ .Annotations.summary }}
+    #       Description: {{ .Annotations.description }}
+    #       {{ end }}
+
+  - name: 'warning-alerts'
+    webhook_configs:
+      - url: 'http://alert-service:8001/webhook/warning'
+        send_resolved: true
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']

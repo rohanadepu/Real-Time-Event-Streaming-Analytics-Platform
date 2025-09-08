@@ -1,0 +1,350 @@
+# Default values for streaming-platform
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Image configuration
+image:
+  registry: ghcr.io
+  repository: your-username/streaming-platform
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Security Context
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Resource limits
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Auto-scaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Services Configuration
+services:
+  readApi:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: read-api
+      tag: "latest"
+    service:
+      type: ClusterIP
+      port: 8000
+    ingress:
+      enabled: true
+      className: "nginx"
+      annotations:
+        nginx.ingress.kubernetes.io/rewrite-target: /
+      hosts:
+        - host: api.streaming-platform.local
+          paths:
+            - path: /
+              pathType: Prefix
+      tls: []
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+  alertService:
+    enabled: true
+    replicaCount: 1
+    image:
+      repository: alert-service
+      tag: "latest"
+    service:
+      type: ClusterIP
+      port: 8001
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+  eventProducer:
+    enabled: true
+    replicaCount: 1
+    image:
+      repository: event-producer
+      tag: "latest"
+    config:
+      eventsPerSecond: 100
+      duration: ""  # Infinite by default
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+
+# Flink Configuration
+flink:
+  enabled: true
+  image:
+    repository: flink
+    tag: "1.17-scala_2.12-java11"
+  
+  jobmanager:
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+    service:
+      type: ClusterIP
+      port: 8081
+    
+  taskmanager:
+    replicaCount: 2
+    taskSlots: 4
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+
+  # Flink Jobs
+  jobs:
+    aggregation:
+      enabled: true
+      jarFile: "aggregation-job-1.0.0.jar"
+      className: "com.streaming.analytics.aggregation.EventAggregationJob"
+      parallelism: 2
+    
+    anomalyDetection:
+      enabled: true
+      jarFile: "anomaly-detection-job-1.0.0.jar"
+      className: "com.streaming.analytics.anomaly.AnomalyDetectionJob"
+      parallelism: 2
+
+# Kafka Configuration (using Bitnami chart)
+kafka:
+  enabled: true
+  replicaCount: 3
+  
+  # Kafka configuration
+  config:
+    # Enable auto topic creation
+    autoCreateTopicsEnable: true
+    # Log retention
+    logRetentionHours: 168  # 7 days
+    # Compression
+    compressionType: "snappy"
+    # Number of partitions for new topics
+    defaultReplicationFactor: 3
+    numPartitions: 6
+  
+  # Resource allocation
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  
+  # Persistence
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: ""
+  
+  # Metrics
+  metrics:
+    kafka:
+      enabled: true
+    jmx:
+      enabled: true
+
+# Redis Configuration (using Bitnami chart)
+redis:
+  enabled: true
+  architecture: standalone
+  
+  auth:
+    enabled: false
+  
+  master:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: ""
+
+# PostgreSQL/TimescaleDB Configuration
+postgresql:
+  enabled: true
+  
+  auth:
+    postgresPassword: "password"
+    username: "admin"
+    password: "password"
+    database: "streaming_analytics"
+  
+  primary:
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    persistence:
+      enabled: true
+      size: 200Gi
+      storageClass: ""
+    
+    # TimescaleDB extension
+    initdb:
+      scripts:
+        01-init-timescaledb.sql: |
+          CREATE EXTENSION IF NOT EXISTS timescaledb;
+          
+          CREATE TABLE IF NOT EXISTS events_raw (
+              ts TIMESTAMPTZ NOT NULL,
+              event_id UUID NOT NULL,
+              source TEXT NOT NULL,
+              metric DOUBLE PRECISION,
+              status TEXT,
+              user_id TEXT,
+              attributes JSONB,
+              created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+          
+          SELECT create_hypertable('events_raw', 'ts', if_not_exists => TRUE);
+          
+          CREATE INDEX IF NOT EXISTS idx_events_source_ts ON events_raw (source, ts DESC);
+          CREATE INDEX IF NOT EXISTS idx_events_user_id ON events_raw (user_id);
+          CREATE INDEX IF NOT EXISTS idx_events_status ON events_raw (status);
+          CREATE INDEX IF NOT EXISTS idx_events_attributes ON events_raw USING GIN (attributes);
+
+# Monitoring Configuration
+monitoring:
+  prometheus:
+    enabled: true
+    server:
+      persistentVolume:
+        enabled: true
+        size: 50Gi
+    
+  grafana:
+    enabled: true
+    admin:
+      user: "admin"
+      password: "admin"
+    persistence:
+      enabled: true
+      size: 10Gi
+    
+    # Pre-configured dashboards
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+    
+    dashboards:
+      default:
+        kafka-overview:
+          gnetId: 721
+          revision: 1
+          datasource: Prometheus
+        flink-overview:
+          gnetId: 10369
+          revision: 1
+          datasource: Prometheus
+
+# ConfigMaps for application configuration
+config:
+  kafka:
+    bootstrapServers: "streaming-platform-kafka:9092"
+  
+  redis:
+    host: "streaming-platform-redis-master"
+    port: 6379
+  
+  postgresql:
+    host: "streaming-platform-postgresql"
+    port: 5432
+    database: "streaming_analytics"
+    username: "admin"
+
+# Secrets (Note: Use external secret management in production)
+secrets:
+  postgresql:
+    password: "password"
+  
+  jwt:
+    secret: "your-super-secret-jwt-key-change-this-in-production"
+
+# Network Policies
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+  egress:
+    enabled: true
+
+# Pod Disruption Budgets
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

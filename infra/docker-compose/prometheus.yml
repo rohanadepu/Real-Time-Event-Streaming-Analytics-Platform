@@ -1,0 +1,86 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Kafka metrics (JMX)
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka:9997']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # Flink JobManager
+  - job_name: 'flink-jobmanager'
+    static_configs:
+      - targets: ['flink-jobmanager:9249']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Flink TaskManager
+  - job_name: 'flink-taskmanager'
+    static_configs:
+      - targets: ['flink-taskmanager:9249']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Redis metrics (using redis_exporter if added)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # TimescaleDB/PostgreSQL metrics (using postgres_exporter if added)
+  - job_name: 'timescaledb'
+    static_configs:
+      - targets: ['timescaledb:5432']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # FastAPI applications
+  - job_name: 'read-api'
+    static_configs:
+      - targets: ['read-api:8000']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  - job_name: 'alert-service'
+    static_configs:
+      - targets: ['alert-service:8001']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Event producer metrics
+  - job_name: 'event-producer'
+    static_configs:
+      - targets: ['event-producer:8002']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Node exporter for system metrics (if added)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # Elasticsearch metrics (if exporter added)
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: ['elasticsearch:9200']
+    metrics_path: /_prometheus/metrics
+    scrape_interval: 30s

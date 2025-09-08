@@ -1,0 +1,4 @@
+kafka-python==2.0.2
+prometheus-client==0.17.1
+asyncio
+dataclasses; python_version<"3.7"
